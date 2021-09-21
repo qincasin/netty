@@ -48,6 +48,11 @@ public abstract class MultithreadEventLoopGroup extends MultithreadEventExecutor
     /**
      * @see MultithreadEventExecutorGroup#MultithreadEventExecutorGroup(int, Executor, Object...)
      */
+    //参数一：内部线程数量 假设平台是 8cpu的，这里会创建长度为16的 EventExecutor 数组
+    //参数二：执行器 null
+    //参数三：选择提供器，通过这个可以获取到jdk层面的selector实例。 args[0] = selectorProvider
+    //参数四：选择器执行策略：DefaultSelectStrategy。 args[1] = selectorStrategy
+    //参数五：线程池拒绝策略 args[3]
     protected MultithreadEventLoopGroup(int nThreads, Executor executor, Object... args) {
         super(nThreads == 0 ? DEFAULT_EVENT_LOOP_THREADS : nThreads, executor, args);
     }

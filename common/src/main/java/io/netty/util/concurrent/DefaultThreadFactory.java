@@ -28,15 +28,23 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class DefaultThreadFactory implements ThreadFactory {
 
+    //每个DefaultThreadFactory实例内部都有他自己的poolId
     private static final AtomicInteger poolId = new AtomicInteger();
 
+    //每个DefaultThreadFactory实例内部生成的线程 都有它自己的线程线程Id
     private final AtomicInteger nextId = new AtomicInteger();
+    //前缀
     private final String prefix;
+    //daemon线程
     private final boolean daemon;
+    //线程优先级，默认都是 5
     private final int priority;
     protected final ThreadGroup threadGroup;
 
     public DefaultThreadFactory(Class<?> poolType) {
+        //参数一：poolType 假设是NioEventLoopGroup对象
+        //参数二：非守护线程
+        //参数三：5
         this(poolType, false, Thread.NORM_PRIORITY);
     }
 
@@ -67,6 +75,7 @@ public class DefaultThreadFactory implements ThreadFactory {
     public static String toPoolName(Class<?> poolType) {
         ObjectUtil.checkNotNull(poolType, "poolType");
 
+       //获取一个不包含包名的 className
         String poolName = StringUtil.simpleClassName(poolType);
         switch (poolName.length()) {
             case 0:

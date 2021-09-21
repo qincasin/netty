@@ -32,9 +32,12 @@ public final class DefaultEventExecutorChooserFactory implements EventExecutorCh
 
     @Override
     public EventExecutorChooser newChooser(EventExecutor[] executors) {
+        //判断是否是2的次方数
         if (isPowerOfTwo(executors.length)) {
+            //性能更优一些
             return new PowerOfTwoEventExecutorChooser(executors);
         } else {
+            //正常取模获取
             return new GenericEventExecutorChooser(executors);
         }
     }
@@ -53,6 +56,7 @@ public final class DefaultEventExecutorChooserFactory implements EventExecutorCh
 
         @Override
         public EventExecutor next() {
+            //通过& ....1111  获取一个<=length的正整数
             return executors[idx.getAndIncrement() & executors.length - 1];
         }
     }
@@ -70,6 +74,7 @@ public final class DefaultEventExecutorChooserFactory implements EventExecutorCh
 
         @Override
         public EventExecutor next() {
+            //取模  获取<=当前线程池数量的一个值
             return executors[(int) Math.abs(idx.getAndIncrement() % executors.length)];
         }
     }
