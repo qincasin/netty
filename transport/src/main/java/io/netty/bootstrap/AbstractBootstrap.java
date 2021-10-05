@@ -269,12 +269,15 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
     }
 
     private ChannelFuture doBind(final SocketAddress localAddress) {
+        //regFuture 其实就是注册相关的promise 对象   它关联的异步任务 是  register0
+        //register0 咱们知道 我们已经把它扔到当前Channel 相关的 eventLoop的工作队列中了
         final ChannelFuture regFuture = initAndRegister();
         final Channel channel = regFuture.channel();
         if (regFuture.cause() != null) {
             return regFuture;
         }
 
+        //这里判断 异步任务是否已经处理完，如果已经处理完了，则执行如下的逻辑
         if (regFuture.isDone()) {
             // At this point we know that the registration was complete and successful.
             ChannelPromise promise = channel.newPromise();
@@ -283,6 +286,8 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
         } else {
             // Registration future is almost always fulfilled already, but just in case it's not.
             final PendingRegistrationPromise promise = new PendingRegistrationPromise(channel);
+            //这里向 register0任务相关的promise 对象添加一个回调对象，回调对象去处理 register0 成功或者失败的事情
+            //监听者回调线程是eventLoop线程，不是当前主线程
             regFuture.addListener(new ChannelFutureListener() {
                 @Override
                 public void operationComplete(ChannelFuture future) throws Exception {
@@ -300,6 +305,7 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
                     }
                 }
             });
+            // 主线程返回了一个与bind相关的 promise对象
             return promise;
         }
     }
@@ -307,7 +313,17 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
     final ChannelFuture initAndRegister() {
         Channel channel = null;
         try {
+            //当前是服务端
+            //channelFactory 是谁？  是ReflectiveChannelFactory 实例
+            //constructor.newInstance(); --> 当前的 constructor 是 调用的 NioServerSocketChannel 的无参构造方法
+            //1.服务端channel内部会创建出来pipeline
+            //2.pipeline内部有两个处理器，一个是tail，一个是head
+            //3.配置channel是非阻塞的
+            //4.保存了感兴趣的事件类型为：Accept
+            //5.创建出来NioServerSocketChannel Unsafe对象，类型是NioMessageUnsafe
             channel = channelFactory.newChannel();
+
+            //这里主要的一步就是  会给当前服务端channel的pipeline添加一个CI
             init(channel);
         } catch (Throwable t) {
             if (channel != null) {
@@ -320,6 +336,11 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
             return new DefaultChannelPromise(new FailedChannel(), GlobalEventExecutor.INSTANCE).setFailure(t);
         }
 
+        //config()是什么？  new ServerBootstrapConfig(this);
+        //serverBootstrapConfig.group() 返回的是 就是boss组   boss它是 NioEventLoopGroup
+        //nioEventLoopGroup.register();
+
+        //regFuture 其实就是注册相关的promise 对象
         ChannelFuture regFuture = config().group().register(channel);
         if (regFuture.cause() != null) {
             if (channel.isRegistered()) {

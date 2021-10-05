@@ -129,16 +129,61 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
 
     @Override
     void init(Channel channel) {
+        //服务端
         setChannelOptions(channel, newOptionsArray(), logger);
         setAttributes(channel, newAttributesArray());
 
         ChannelPipeline p = channel.pipeline();
 
+        //这个就是workerGroup
         final EventLoopGroup currentChildGroup = childGroup;
+        /**
+         * 就是这个
+         * .childHandler(new ChannelInitializer<SocketChannel>() {
+         *                  @Override
+         *                  public void initChannel(SocketChannel ch) throws Exception {
+         *                      ChannelPipeline p = ch.pipeline();
+         *                      if (sslCtx != null) {
+         *                          p.addLast(sslCtx.newHandler(ch.alloc()));
+         *                      }
+         *                      //p.addLast(new LoggingHandler(LogLevel.INFO));
+         *                      p.addLast(serverHandler);
+         *                  }
+         *              })
+         */
         final ChannelHandler currentChildHandler = childHandler;
+        //客户端socket选项信息
         final Entry<ChannelOption<?>, Object>[] currentChildOptions = newOptionsArray(childOptions);
+        //
+        //netty的channel都是实现了 AttributeMap接口的 可以在启动类 内配置一些自定义数据，这样的话 创建出来的 channel实例，就都包含这些数据信息了
         final Entry<AttributeKey<?>, Object>[] currentChildAttrs = newAttributesArray(childAttrs);
 
+        //ChannelInitializer 它本身并不是一个handler ，其实是通过了适配器 (ChannelHandlerAdapter)实现了handler
+        //它存在的意义就是 为了延迟初始化pipeline；什么时候初始化呢？当pipeline上的channel 激活后，真正的添加 handler 逻辑才要执行
+        //目前NioServerSocketChannel 长这样子 ---->      head <----> CI(ChannelInitializer)  <----> tail
+        //后面合适的 时候CI会做解压缩操作，将内部真正的 handler 添加到 pipeline中，并且将自己移处该 pipeline  (其实就是如下代码 ChannelInitializer#initChannel )
+        /**
+         *     @SuppressWarnings("unchecked")
+         *     private boolean initChannel(ChannelHandlerContext ctx) throws Exception {
+         *         if (initMap.add(ctx)) { // Guard against re-entrance.
+         *             try {
+         *                 //p.addLast(new ChannelInitializer<Channel>() {
+         *                 initChannel((C) ctx.channel());
+         *             } catch (Throwable cause) {
+         *                 // Explicitly call exceptionCaught(...) as we removed the handler before calling initChannel(...).
+         *                 // We do so to prevent multiple calls to initChannel(...).
+         *                 exceptionCaught(ctx, cause);
+         *             } finally {
+         *                 ChannelPipeline pipeline = ctx.pipeline();
+         *                 if (pipeline.context(this) != null) {
+         *                     pipeline.remove(this);  移处掉的
+         *                 }
+         *             }
+         *             return true;
+         *         }
+         *         return false;
+         *     }
+         */
         p.addLast(new ChannelInitializer<Channel>() {
             @Override
             public void initChannel(final Channel ch) {
@@ -148,6 +193,7 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
                     pipeline.addLast(handler);
                 }
 
+                //异步任务
                 ch.eventLoop().execute(new Runnable() {
                     @Override
                     public void run() {

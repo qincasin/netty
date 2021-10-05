@@ -76,11 +76,16 @@ public abstract class AbstractNioChannel extends AbstractChannel {
      * @param ch                the underlying {@link SelectableChannel} on which it operates
      * @param readInterestOp    the ops to set to receive data from the {@link SelectableChannel}
      */
+    //服务端类型
+    //参数一：null
+    //参数二：jdk层面的ServerSocketChannel
+    //参数三：感兴趣事件，因为咱们是服务端，所以感兴趣的是Accept事件，当前服务端channel最终都会注册到Selector[多路复用器]上面的
     protected AbstractNioChannel(Channel parent, SelectableChannel ch, int readInterestOp) {
         super(parent);
         this.ch = ch;
         this.readInterestOp = readInterestOp;
         try {
+            //配置当前的channel为非阻塞类型
             ch.configureBlocking(false);
         } catch (IOException e) {
             try {
@@ -377,6 +382,11 @@ public abstract class AbstractNioChannel extends AbstractChannel {
         boolean selected = false;
         for (;;) {
             try {
+                //javaChannel()返回jdk层面的 channel  可能是ServerSocketChannel 也可能是SocketChannel
+                //register()方法
+                //参数1: 多路复用器 jdk层面的实现
+                //参数2: ops 感兴趣的事件  这里给0 ，后面会看到重写的逻辑
+                //参数3:  att 附件  通过附件参数 可以拿到 Netty层面的对象， 这里可能是NioServerSocketChannel 也可能是NioSocketChannel
                 selectionKey = javaChannel().register(eventLoop().unwrappedSelector(), 0, this);
                 return;
             } catch (CancelledKeyException e) {

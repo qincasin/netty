@@ -824,6 +824,7 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
     private void execute(Runnable task, boolean immediate) {
         boolean inEventLoop = inEventLoop();
         addTask(task);
+        //当前应该为false 下面取反后 就是true 代表和当前线程不是同一个线程
         if (!inEventLoop) {
             startThread();
             if (isShutdown()) {

@@ -70,8 +70,19 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
      */
     protected AbstractChannel(Channel parent) {
         this.parent = parent;
+        //给每个channel实例创建一个channelID
         id = newId();
+        //当类型是：NioServerSocketChannel 它的Unsafe对象实例是谁？NioMessageUnsafe
+        /**
+         *     @Override
+         *     protected AbstractNioUnsafe newUnsafe() {
+         *         return new NioMessageUnsafe();
+         *     }
+         */
         unsafe = newUnsafe();
+        //创建出来当前channel 内部的pipeline
+        //默认有俩处理器，一个是tailContext 一个是headContext
+        //head<---->tail
         pipeline = newChannelPipeline();
     }
 
@@ -464,7 +475,10 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
         @Override
         public final void register(EventLoop eventLoop, final ChannelPromise promise) {
             ObjectUtil.checkNotNull(eventLoop, "eventLoop");
+            //防止channel 重复注册
             if (isRegistered()) {
+                //1.设置promise结果为失败
+                //2.回调监听者，执行失败的逻辑
                 promise.setFailure(new IllegalStateException("registered to an event loop already"));
                 return;
             }
@@ -474,12 +488,18 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
                 return;
             }
 
+            //AbstractChannel.this  是获取外部 channel对象 的作用域，这个channel 就是unsafe的外层对象
+            // AbstractChannel.this ---> NioServerSocketChannel对象
+            //绑定个关系  后续Channel上的 事件  或者 任务 都会依赖这个 当前eventLoop 线程去处理
             AbstractChannel.this.eventLoop = eventLoop;
 
+            // eventLoop.inEventLoop 判断 当前线程 是不是当前eventloop 自己的线程 ...
+            // 这样设计的目的就是为了 线程安全
             if (eventLoop.inEventLoop()) {
                 register0(promise);
             } else {
                 try {
+                    //将注册的任务 提交到 了 eventloop 任务队列内部了   带着promise 过去的
                     eventLoop.execute(new Runnable() {
                         @Override
                         public void run() {
@@ -497,6 +517,8 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
             }
         }
 
+        //这个方法一定是 Channel关联的 Eventloop 线程执行
+        //promise 表示注册结果的，外部可以向它注册 监听者。。。来完成 注册后的逻辑
         private void register0(ChannelPromise promise) {
             try {
                 // check if the channel is still open as it could be closed in the mean time when the register
@@ -505,8 +527,10 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
                     return;
                 }
                 boolean firstRegistration = neverRegistered;
+                //开始注册 ....
                 doRegister();
                 neverRegistered = false;
+                //表示当前channel已经注册到多路复用器了
                 registered = true;
 
                 // Ensure we call handlerAdded(...) before we actually notify the promise. This is needed as the

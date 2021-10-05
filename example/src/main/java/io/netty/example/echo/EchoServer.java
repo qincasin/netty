@@ -49,15 +49,25 @@ public final class EchoServer {
         }
 
         // Configure the server.
+        //线程池组
         EventLoopGroup bossGroup = new NioEventLoopGroup(1);
         EventLoopGroup workerGroup = new NioEventLoopGroup();
         final EchoServerHandler serverHandler = new EchoServerHandler();
         try {
+
             ServerBootstrap b = new ServerBootstrap();
+            //bossGroup 是serverChannel在使用
+            //workerGroup 是基于当前server产生的 客户端Channel使用
             b.group(bossGroup, workerGroup)
+                    //设置服务端使用的channel类型
+                    //内部创建了一个 new ReflectiveChannelFactory 工厂，反射工厂提供了一个newInstance方法用于创建 channel实例
+                    //下面的bind方法中使用的channelFaction就是当前的NioServerSocketChannel的无参构造器来构造的
              .channel(NioServerSocketChannel.class)
+                    //保存一些server端自定义选项
              .option(ChannelOption.SO_BACKLOG, 100)
+                    //配置用户自定义的server端 pipeline处理器，后续创建出来NioServerChannel实例后，会将用户自定义的Handler加载到该pipeline
              .handler(new LoggingHandler(LogLevel.INFO))
+                    //配置服务端上连接进来的客户端，客户端Channel内部的pipeline 初始信息
              .childHandler(new ChannelInitializer<SocketChannel>() {
                  @Override
                  public void initChannel(SocketChannel ch) throws Exception {
@@ -71,6 +81,8 @@ public final class EchoServer {
              });
 
             // Start the server.
+            //b.bind(PORT) 返回 一个与"绑定"操作相关的promise对象
+            //promise.sync 会将主线程挂起  陷入阻塞状态 ，实现方式 是通过 Object.await 方式实现的 ; 知道"绑定"操作完成才会唤醒
             ChannelFuture f = b.bind(PORT).sync();
 
             // Wait until the server socket is closed.

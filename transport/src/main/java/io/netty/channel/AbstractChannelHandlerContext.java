@@ -927,6 +927,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
     }
 
     final void setAddPending() {
+        //设置 从 init 阶段 修改为 add_pending阶段
         boolean updated = HANDLER_STATE_UPDATER.compareAndSet(this, INIT, ADD_PENDING);
         assert updated; // This should always be true as it MUST be called before setAddComplete() or setRemoved().
     }
@@ -935,6 +936,30 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         // We must call setAddComplete before calling handlerAdded. Otherwise if the handlerAdded method generates
         // any pipeline events ctx.handler() will miss them because the state will not allow it.
         if (setAddComplete()) {
+            //handler() 这个就是ctx   包装的handler   其实就是ci
+            //handlerAdded(this) 这个时候就会调用到 ChannelInitializer # public void handlerAdded(ChannelHandlerContext ctx) 方法了
+            //这个方法就是主线程 handler 实现的方法被调用的地方 ServerBootstrap#init() 方法
+            /**
+             *         p.addLast(new ChannelInitializer<Channel>() {
+             *             @Override
+             *             public void initChannel(final Channel ch) {
+             *                 final ChannelPipeline pipeline = ch.pipeline();
+             *                 ChannelHandler handler = config.handler();
+             *                 if (handler != null) {
+             *                     pipeline.addLast(handler);
+             *                 }
+             *
+             *                 ch.eventLoop().execute(new Runnable() {
+             *                     @Override
+             *                     public void run() {
+             *                         pipeline.addLast(new ServerBootstrapAcceptor(
+             *                                 ch, currentChildGroup, currentChildHandler, currentChildOptions, currentChildAttrs));
+             *                     }
+             *                 });
+             *             }
+             *         })
+             */
+
             handler().handlerAdded(this);
         }
     }

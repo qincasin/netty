@@ -182,11 +182,17 @@ public class DefaultChannelPipeline implements ChannelPipeline {
         return this;
     }
 
+    // 双向链表  的插入
     private void addFirst0(AbstractChannelHandlerContext newCtx) {
+        //保存头节点的后继节点
         AbstractChannelHandlerContext nextCtx = head.next;
+        //待插入节点的的前驱指向 头节点
         newCtx.prev = head;
+        //待插入节点的的后继指向之前被保存的节点
         newCtx.next = nextCtx;
+        //头节点的后继指向插入节点
         head.next = newCtx;
+        //待插入节点的前驱指向之前保存的节点
         nextCtx.prev = newCtx;
     }
 
@@ -1100,8 +1106,10 @@ public class DefaultChannelPipeline implements ChannelPipeline {
             assert !registered;
 
             // This Channel itself was registered.
+            //标记为已经注册了
             registered = true;
 
+            //拿到head头节点
             pendingHandlerCallbackHead = this.pendingHandlerCallbackHead;
             // Null out so it can be GC'ed.
             this.pendingHandlerCallbackHead = null;
@@ -1111,6 +1119,7 @@ public class DefaultChannelPipeline implements ChannelPipeline {
         // holding the lock and so produce a deadlock if handlerAdded(...) will try to add another handler from outside
         // the EventLoop.
         PendingHandlerCallback task = pendingHandlerCallbackHead;
+        //拿到task后，一个一个的去还行execute方法，当前方法是eventLoop线程做的
         while (task != null) {
             task.execute();
             task = task.next;
@@ -1120,8 +1129,10 @@ public class DefaultChannelPipeline implements ChannelPipeline {
     private void callHandlerCallbackLater(AbstractChannelHandlerContext ctx, boolean added) {
         assert !registered;
 
+        //这个时候  task 包装了 ctx   ，ctx中包装了 ci ，ci里面包装了 pipeline
         PendingHandlerCallback task = added ? new PendingHandlerAddedTask(ctx) : new PendingHandlerRemovedTask(ctx);
         PendingHandlerCallback pending = pendingHandlerCallbackHead;
+        //如下是一个单向链表   入队的操作   一个个的task 连接在一起
         if (pending == null) {
             pendingHandlerCallbackHead = task;
         } else {
@@ -1459,6 +1470,7 @@ public class DefaultChannelPipeline implements ChannelPipeline {
         @Override
         void execute() {
             EventExecutor executor = ctx.executor();
+            //如果是当前线程则执行如下操作
             if (executor.inEventLoop()) {
                 callHandlerAdded0(ctx);
             } else {

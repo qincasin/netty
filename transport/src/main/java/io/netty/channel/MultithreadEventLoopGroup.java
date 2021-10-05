@@ -88,6 +88,11 @@ public abstract class MultithreadEventLoopGroup extends MultithreadEventExecutor
 
     @Override
     public ChannelFuture register(Channel channel) {
+        //next() 从当前group内选择一个 eventLoop对象返回
+        //eventLoop 它是一个单线程的线程池，并且它内部有selector
+        //1. 处理eventloop工作队列的内部任务
+        //2. 处理eventloop内部 selector 上面注册的 channel事件
+        // channel : 可能是 NioServerSocketChannel 也可能是 NioSocketChannel'
         return next().register(channel);
     }
 
