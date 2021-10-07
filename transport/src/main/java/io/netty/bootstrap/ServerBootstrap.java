@@ -193,7 +193,7 @@ public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerCh
                     pipeline.addLast(handler);
                 }
 
-                //异步任务
+                //异步任务 2
                 ch.eventLoop().execute(new Runnable() {
                     @Override
                     public void run() {

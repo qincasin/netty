@@ -419,8 +419,10 @@ public abstract class AbstractNioChannel extends AbstractChannel {
 
         readPending = true;
 
+        //获取感兴趣的事件
         final int interestOps = selectionKey.interestOps();
         if ((interestOps & readInterestOp) == 0) {
+            //将 interestOps 加到感兴趣事件中 readInterestOp
             selectionKey.interestOps(interestOps | readInterestOp);
         }
     }
