@@ -25,6 +25,19 @@ final class DefaultSelectStrategy implements SelectStrategy {
 
     private DefaultSelectStrategy() { }
 
+    /**
+     *     private final IntSupplier selectNowSupplier = new IntSupplier() {
+     *         @Override
+     *         public int get() throws Exception {
+     *             return selectNow();   // 调用的多路复用器的selectNow()方法， 该方法不阻塞线程，直接返回
+     *         }
+     *     };
+     *
+     * @param selectSupplier The supplier with the result of a select result.
+     * @param hasTasks true if tasks are waiting to be processed.
+     * @return
+     * @throws Exception
+     */
     @Override
     public int calculateStrategy(IntSupplier selectSupplier, boolean hasTasks) throws Exception {
         return hasTasks ? selectSupplier.get() : SelectStrategy.SELECT;
