@@ -736,6 +736,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
         // 1. NioServerSocketChannel  -> NioMessageUnsafe
         // 2. NioSocketChannel --> NioByteUnsafe
         final AbstractNioChannel.NioUnsafe unsafe = ch.unsafe();
+
         if (!k.isValid()) {
             final EventLoop eventLoop;
             try {

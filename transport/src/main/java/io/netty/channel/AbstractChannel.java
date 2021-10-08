@@ -79,6 +79,7 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
          *         return new NioMessageUnsafe();
          *     }
          */
+        // 当前NioSocketChannel时，它的 unsafe对象实例是谁？ NioByteUnsafe
         unsafe = newUnsafe();
         //创建出来当前channel 内部的pipeline
         //默认有俩处理器，一个是tailContext 一个是headContext
@@ -554,6 +555,8 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
                 // 这个时候 绑定 一定是 没有完成的！
                 // 这一步 isActive() 返回false   // -->  NioServerSocketChannel 中的实现类 return isOpen() && javaChannel().socket().isBound();
                 if (isActive()) {
+
+                    // 这里客户端会进来， 服务端channel 不会 走这里
                     if (firstRegistration) {
                         pipeline.fireChannelActive();
                     } else if (config().isAutoRead()) {
