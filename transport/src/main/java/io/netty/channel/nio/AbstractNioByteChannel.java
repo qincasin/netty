@@ -134,22 +134,39 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
 
         @Override
         public final void read() {
+            //获取客户端Channel# config 对象
             final ChannelConfig config = config();
             if (shouldBreakReadReady(config)) {
                 clearReadPending();
                 return;
             }
+            // 获取客户端Channel # pipeline
             final ChannelPipeline pipeline = pipeline();
+            //获取一个缓冲区分配器 PooledByteBufAllocator 只要平台不是安卓，获取的缓冲区分配器 就是池化内存管理的缓冲分配器
             final ByteBufAllocator allocator = config.getAllocator();
+
+            //控制读循环  以及预测下次创建的 ByteBuf容量大小
             final RecvByteBufAllocator.Handle allocHandle = recvBufAllocHandle();
+            //重置...
             allocHandle.reset(config);
 
+            //对jdk层面的 ByteBuffer的增强接口实现     缓冲区，里面包装着内存， 提供给咱们 去读取 Socket 读缓冲区 内的业务数据
             ByteBuf byteBuf = null;
             boolean close = false;
             try {
                 do {
+                    // 参数 ： 池化内存管理的缓冲区分配器 他才是真正分配内存的大佬
+                    //allocHandle 在这里 的角色是 预测分配多大内存
                     byteBuf = allocHandle.allocate(allocator);
+                    // 读取当前socket 读缓冲区的数据 到ByteBuf中
+                    //doReadBytes(byteBuf) --> 返回真实  从SocketChannel 读取的数据量
+
+                    //NioSocketChannel#doReadBytes()
+                    // allocHandle.lastBytesRead 更新缓冲区 预测分配器 最后一次的 读取数据量；  分析 allocHandle 的时候 具体的读取数据量在说
                     allocHandle.lastBytesRead(doReadBytes(byteBuf));
+
+                    //1.channel 底层socket 读缓冲区的数据 已经完全读取了   返回了 0
+                    //2.socket 关闭了 。。。 会返回 -1
                     if (allocHandle.lastBytesRead() <= 0) {
                         // nothing was read. release the buffer.
                         byteBuf.release();
@@ -162,13 +179,17 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
                         break;
                     }
 
+                    //更新 缓存区预测分配器 读取的消息数量
                     allocHandle.incMessagesRead(1);
                     readPending = false;
+                    // 向客户端pipeline发起channelRead事件 ， 该pipeline 实现了 channelRead的 handler 就可以进行业务处理了
                     pipeline.fireChannelRead(byteBuf);
                     byteBuf = null;
                 } while (allocHandle.continueReading());
 
+                //最后在拿到所有的容量大小数据 去重新计算下下一次获取容量的大小 非常具有伸缩性  AdaptiveRecvByteBufAllocator#HandleImpl#readComplete
                 allocHandle.readComplete();
+                //设置selectionKey 包含"read"标记， 表示selector 需要 继续帮当前channel监听 read 事件
                 pipeline.fireChannelReadComplete();
 
                 if (close) {

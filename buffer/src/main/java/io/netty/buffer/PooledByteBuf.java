@@ -153,6 +153,7 @@ abstract class PooledByteBuf<T> extends AbstractReferenceCountedByteBuf {
     protected final ByteBuffer internalNioBuffer() {
         ByteBuffer tmpNioBuf = this.tmpNioBuf;
         if (tmpNioBuf == null) {
+            //PooledDirectByteBuf # newInternalNioBuffer
             this.tmpNioBuf = tmpNioBuf = newInternalNioBuffer(memory);
         } else {
             tmpNioBuf.clear();
