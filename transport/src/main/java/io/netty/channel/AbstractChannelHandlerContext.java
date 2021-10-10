@@ -61,7 +61,9 @@ import static io.netty.channel.ChannelHandlerMask.mask;
 abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, ResourceLeakHint {
 
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(AbstractChannelHandlerContext.class);
+    //前驱
     volatile AbstractChannelHandlerContext next;
+    //后继
     volatile AbstractChannelHandlerContext prev;
 
     private static final AtomicIntegerFieldUpdater<AbstractChannelHandlerContext> HANDLER_STATE_UPDATER =
@@ -85,7 +87,9 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
      */
     private static final int INIT = 0;
 
+    // 当前ctx归属 pipeline
     private final DefaultChannelPipeline pipeline;
+    //默认情况下 不指定 想pipeline 添加 ctx时 pipeline 会给cxt自动生成
     private final String name;
     private final boolean ordered;
     private final int executionMask;
@@ -101,13 +105,22 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
 
     private volatile int handlerState = INIT;
 
+    //参数1：pipeline 外层容器，盛装CTX(handler) 的管道容器
+    //参数2：executor 事件执行器   一般情况是 null，除非 指定了该事件执行器
+    //参数3：name
+    //参数4：handler 的处理器真实的类型
     AbstractChannelHandlerContext(DefaultChannelPipeline pipeline, EventExecutor executor,
                                   String name, Class<? extends ChannelHandler> handlerClass) {
         this.name = ObjectUtil.checkNotNull(name, "name");
         this.pipeline = pipeline;
         this.executor = executor;
+        // mask 方法用于计算掩码   这个掩码的作用是 方便ctx 前后传递时 查找 下一个 合适的  ctx
+        // 返回值，是一个int 类型的值，但是需要看它二进制 位上的值
+        // 二进制中对应下标的位  代表 指定的方法 位的值是1  说明 指定方法在 handlerType  类型中 进行实现
+        //位的值是0  说明 指定方法在 handlerType  类型中 未进行实现
         this.executionMask = mask(handlerClass);
         // Its ordered if its driven by the EventLoop or the given Executor is an instanceof OrderedEventExecutor.
+        // 一般情况是 true
         ordered = executor == null || executor instanceof OrderedEventExecutor;
     }
 
@@ -126,6 +139,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         return channel().config().getAllocator();
     }
 
+    // 一般情况 返回ch 注册 的 事件轮训器
     @Override
     public EventExecutor executor() {
         if (executor == null) {
@@ -142,6 +156,9 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
 
     @Override
     public ChannelHandlerContext fireChannelRegistered() {
+        //MASK_CHANNEL_REGISTERED 0b 0000 0000 0000 0000 0000 0000 0000 0010
+        //findContextInbound(MASK_CHANNEL_REGISTERED)
+        //findContextInbound() 方法   会找到 当前ctx后面 ctx中实现 了 CHANNEL_REGISTERED 方法的 ctx ,其实是ctx中的handler 实现
         invokeChannelRegistered(findContextInbound(MASK_CHANNEL_REGISTERED));
         return this;
     }
@@ -265,6 +282,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
             }
         } else {
             fireChannelInactive();
+            //dasjldasjldjakdnakdnakldakljdlasj大家奥斯卡来得及拉市那大 大深克隆简单啦看时间你好的 我的
         }
     }
 
@@ -873,6 +891,8 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         return false;
     }
 
+    //MASK_CHANNEL_REGISTERED 0b 0000 0000 0000 0000 0000 0000 0000 0010
+    //findContextInbound(MASK_CHANNEL_REGISTERED)
     private AbstractChannelHandlerContext findContextInbound(int mask) {
         AbstractChannelHandlerContext ctx = this;
         EventExecutor currentExecutor = executor();
