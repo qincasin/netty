@@ -363,6 +363,7 @@ public abstract class AbstractNioChannel extends AbstractChannel {
         @Override
         public final void forceFlush() {
             // directly call super.flush0() to force a flush now
+            //AbstractChannel#flush0
             super.flush0();
         }
 
@@ -443,17 +444,26 @@ public abstract class AbstractNioChannel extends AbstractChannel {
      * but just returns the original {@link ByteBuf}..
      */
     protected final ByteBuf newDirectBuffer(ByteBuf buf) {
+        // 获取当前可读的数据大小
         final int readableBytes = buf.readableBytes();
         if (readableBytes == 0) {
             ReferenceCountUtil.safeRelease(buf);
             return Unpooled.EMPTY_BUFFER;
         }
 
+        //执行到这里 说明ByteBuf内 是有 有效数据的
+
+        // alloc 是一个内存分配器  PooledByteBufAllocator
         final ByteBufAllocator alloc = alloc();
+        //正产情况下 该条件都会成立
         if (alloc.isDirectBufferPooled()) {
+            //根据可读数据量 使用内存分配器 分配了 一块指定大小的 堆外 内存 ByteBuf 对象
             ByteBuf directBuf = alloc.directBuffer(readableBytes);
+            //将堆内的ByteBuf 对象 拷贝 到 堆外的 ByteBuf对象中
             directBuf.writeBytes(buf, buf.readerIndex(), readableBytes);
+            //释放堆内 ByteBuf 占用的内存空间
             ReferenceCountUtil.safeRelease(buf);
+            //返回 堆外的 ByteBuf对象
             return directBuf;
         }
 

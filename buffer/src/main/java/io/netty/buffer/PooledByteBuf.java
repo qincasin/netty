@@ -185,8 +185,11 @@ abstract class PooledByteBuf<T> extends AbstractReferenceCountedByteBuf {
     }
 
     final ByteBuffer _internalNioBuffer(int index, int length, boolean duplicate) {
+        //添加偏移量之后的index
         index = idx(index);
+        //  buffer与memory 管理同一块 空间 ...
         ByteBuffer buffer = duplicate ? newInternalNioBuffer(memory) : internalNioBuffer();
+        //  设置 buffer limit， 范围为byteBuf 在共享memory 的最大下标 ，position 设置为 添加偏移后的 读索引
         buffer.limit(index + length).position(index);
         return buffer;
     }

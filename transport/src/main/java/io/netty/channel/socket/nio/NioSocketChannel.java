@@ -381,24 +381,36 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
     }
 
     @Override
+    //参数 出站缓冲区
     protected void doWrite(ChannelOutboundBuffer in) throws Exception {
+        //获取当前netty ch 包装的 jdk 层面的channel 对象
         SocketChannel ch = javaChannel();
+        //获取自旋次数 16 ： 表示下面的 do... while 循环 最多 16次
         int writeSpinCount = config().getWriteSpinCount();
         do {
             if (in.isEmpty()) {
+                //说明 没有数据要写出了 ；
                 // All written so clear OP_WRITE
                 clearOpWrite();
                 // Directly return here so incompleteWrite(...) is not called.
                 return;
             }
+            //指定到这，说明当前ch 出站缓冲区 仍然有剩余的 entry 待刷新
 
             // Ensure the pending writes are made of ByteBufs only.
+            //限定每次从出站缓冲区内 转换多少 byteBuf 字节数据的一个变量 ；该变量会随着 ch 的状态 不断 变化
             int maxBytesPerGatheringWrite = ((NioSocketChannelConfig) config).getMaxBytesPerGatheringWrite();
+            //将出站缓冲区内的 部分entry.msg 转换成 JDK Channel 依赖的 标准对象  ByteBuffer ，注意 这里返回的 是 ByteBuffer[]
+            //参数1 1024  最多转换出来  1024个 ByteBuffer对象
+            //参数2 nioBuffers 方法 最多 转换 maxBytes  个字节的 ByteBuf 对象
+            // 比较重要 ！！！
             ByteBuffer[] nioBuffers = in.nioBuffers(1024, maxBytesPerGatheringWrite);
+            //获取出上一步 转换的 byteBuffer 的数量
             int nioBufferCnt = in.nioBufferCount();
 
             // Always use nioBuffers() to workaround data-corruption.
             // See https://github.com/netty/netty/issues/2761
+
             switch (nioBufferCnt) {
                 case 0:
                     // We have something else beside ByteBuffers to write so fallback to normal writes.
@@ -408,14 +420,33 @@ public class NioSocketChannel extends AbstractNioByteChannel implements io.netty
                     // Only one ByteBuf so use non-gathering write
                     // Zero length buffers are not added to nioBuffers by ChannelOutboundBuffer, so there is no need
                     // to check if the total size of all the buffers is non-zero.
+                    // 因为nioBufferCnt 是1 ，所以刚刚 nioBuffers() 方法 只转换出来了 一个byteBuffer 对象
                     ByteBuffer buffer = nioBuffers[0];
+                    //获取 byteBuffer 有效数据大小
                     int attemptedBytes = buffer.remaining();
+
+                    // 使用jdk 层面的ch.write 将buffer 内的 数据写入到 socket 写缓冲区内 ... 返回值 是 本次 write 真正写入 socket 的大小 ....
                     final int localWrittenBytes = ch.write(buffer);
+
+                    //条件成立  说明底层socket 写缓冲区 已经满了， 本次 write 没写进去
                     if (localWrittenBytes <= 0) {
+                        //设置 ch 在 多路复用器上注册的 事件 ， 关注 OP_WRITE ，当ch 底层socket 写缓冲区 有空闲空间后   多路复用器 会再次唤醒 当前NioEventLoop 线程
+                        //  再去 处理当前ch的剩余待写数据
+
+                        // 执行到这里的时候，可以通过NioEventLoop#run()#processXXX 方法自己在重新梳理下流程
                         incompleteWrite(true);
                         return;
                     }
+
+                    // 执行到这里  说明 buffer 可能全部都写入到 socket 缓冲区 或者 buffer 的一部分 写入到 socket 缓冲区了
+
+
+
+
                     adjustMaxBytesPerGatheringWrite(attemptedBytes, localWrittenBytes, maxBytesPerGatheringWrite);
+
+                    //将真正写入到socket 写缓冲区 的字节  从出站缓冲区 移处  ....
+                    // 参数: 真正写入到socket 写缓冲区的 大小
                     in.removeBytes(localWrittenBytes);
                     --writeSpinCount;
                     break;
