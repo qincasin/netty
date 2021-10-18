@@ -73,6 +73,38 @@ public final class ChannelOutboundBuffer {
 
     private final Channel channel;
 
+    /**
+     * 1. unflushedEntry != null && flushedEntry == null  此时 出站缓冲区 处于 数据入站阶段
+     * 2. unflushedEntry == null && flushedEntry != null 此时 出站缓冲区 处于 数据出站阶段 ，调用了addFlush 方法后， 会将flushedEntry 指向 原
+     * unflushedEntry 的值，并且计算出 一个 待刷新的节点数量  flushed 值
+     * ==================================================================================================================================================
+     * 3. unflushedEntry != null && flushedEntry != null 这种情况比较极端 ...
+     * 假设业务层面 不停的 使用 ctx.write(msg) ,msg 最终都会 调用unsafe.write(msg.... )  ==> channelOutboundBuffer.addMessage(msg)
+     * e1 -> e2 -> e3 -> e4 -> e5 -> ... -> eN
+     * flushedEntry -> null
+     * unflushedEntry -> e1
+     * taiEntry -> eN
+     * 业务handler 接下来 调用ctx.flush() 最终会触发 unsafe.flush()
+     * unsafe.flush() {
+     *     1.channelOutboundBuffer.addFlush() 这个方法 会将flushedEntry 指向 unflushedEntry 的元素  flushedEntry -> e1
+     *     2.channelOutboundBuffer.nioBuffers(...) 这个方法会返回 byteBuffer[] 数组，供 下面逻辑 使用
+     *     3. 遍历byteBuffer 数组， 调用jdk channel.write(buffer) 该方法 会返回真正写入 socket 写缓冲区的 字节数量  结果为 res
+     *     4. 根据res 移除 出站缓冲区 内对应的entry .
+     * }
+     *
+     * socket 写缓冲区 有可能被写满   假设写到 byteBuffer[3] 的时候， socket 写缓冲区满了  .... 那么 此时 nioEventLoop 再重试 去写 ，也没啥用，
+     * 需要怎么办？
+     *  需要设置多路复用器 当前ch 关注OP_WRITE 事件   当底层 socket 写缓冲区 有空闲时， 多路复用器 会再次唤醒NioEventLoop 线程去处理 ...
+     *
+     *
+     *  这种情况 flushedEntry -> e4
+     *  业务handler 再次使用 ctx.write(msg) 那么 unflushedEntry 就指向 当前 msg 对象的 Entry 了
+     *
+     *  e4 -> e5 -> ... -> eN -> eN+1
+     * flushedEntry -> e4
+     * unflushedEntry -> eN + 1
+     * tailEntry -> eN+1
+     */
     // Entry(flushedEntry) --> ... Entry(unflushedEntry) --> ... Entry(tailEntry)
     //
     // The Entry that is the first in the linked-list structure that was flushed
@@ -294,16 +326,20 @@ public final class ChannelOutboundBuffer {
         ChannelPromise promise = e.promise;
         int size = e.pendingSize;
 
+        // 一般是  移动 flushedEntry 指向 当前e 的下一个节点 ，并且更新 flushed字段
         removeEntry(e);
 
         if (!e.cancelled) {
             // only release message, notify and decrement if it was not canceled before.
+            // byteBuf 实现了 引用计数  这里safeRelease 更新 引用计数，  最终可能会触发 byteBuf 归还内存逻辑
             ReferenceCountUtil.safeRelease(msg);
             safeSuccess(promise);
+            //原子减少 出站 缓冲区的总容量   减去 移除的 entry.pendingSize
             decrementPendingOutboundBytes(size, false, true);
         }
 
         // recycle the entry
+        // 归还 当前 entry 对象 到对象池
         e.recycle();
 
         return true;
@@ -377,6 +413,8 @@ public final class ChannelOutboundBuffer {
             //计算出来 msg 可读 数据量大小
             final int readableBytes = buf.writerIndex() - readerIndex;
 
+            // 条件如果成立 说明 unsafe 写入到 socket底层 缓冲区的 数据量 > flushedEntry.msg 可读数据量大小，
+            // if 内的逻辑 就是移处 flushedEntry 代表的 entry
             if (readableBytes <= writtenBytes) {
 
                 if (writtenBytes != 0) {
@@ -384,8 +422,11 @@ public final class ChannelOutboundBuffer {
                     writtenBytes -= readableBytes;
                 }
 
+                // 移除当前entry
                 remove();
-            } else { // readableBytes > writtenBytes
+            }
+            // 执行到else 说明 unsafe 真正写入到 socket 的数据量 < 当前flushedEntry.msg 可读数据量的
+            else { // readableBytes > writtenBytes
                 if (writtenBytes != 0) {
                     buf.readerIndex(readerIndex + (int) writtenBytes);
                     progress(writtenBytes);
