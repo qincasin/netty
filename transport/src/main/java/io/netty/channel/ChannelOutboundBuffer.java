@@ -71,6 +71,7 @@ public final class ChannelOutboundBuffer {
         }
     };
 
+
     private final Channel channel;
 
     /**
