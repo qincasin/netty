@@ -76,8 +76,8 @@ public final class ChannelOutboundBuffer {
 
     /**
      * 1. unflushedEntry != null && flushedEntry == null  此时 出站缓冲区 处于 数据入站阶段
-     * 2. unflushedEntry == null && flushedEntry != null 此时 出站缓冲区 处于 数据出站阶段 ，调用了addFlush 方法后， 会将flushedEntry 指向 原
-     * unflushedEntry 的值，并且计算出 一个 待刷新的节点数量  flushed 值
+     * 2. unflushedEntry == null && flushedEntry != null 此时 出站缓冲区 处于 数据出站阶段 ，
+     * 调用了addFlush 方法后， 会将flushedEntry 指向 原 unflushedEntry 的值，并且计算出 一个 待刷新的节点数量  flushed 值
      * ==================================================================================================================================================
      * 3. unflushedEntry != null && flushedEntry != null 这种情况比较极端 ...
      * 假设业务层面 不停的 使用 ctx.write(msg) ,msg 最终都会 调用unsafe.write(msg.... )  ==> channelOutboundBuffer.addMessage(msg)

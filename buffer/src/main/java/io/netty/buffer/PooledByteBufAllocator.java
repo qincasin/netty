@@ -65,6 +65,7 @@ public class PooledByteBufAllocator extends AbstractByteBufAllocator implements 
     static {
         int defaultAlignment = SystemPropertyUtil.getInt(
                 "io.netty.allocator.directMemoryCacheAlignment", 0);
+        //  默认一页 内存大小 8K
         int defaultPageSize = SystemPropertyUtil.getInt("io.netty.allocator.pageSize", 8192);
         Throwable pageSizeFallbackCause = null;
         try {
@@ -75,8 +76,10 @@ public class PooledByteBufAllocator extends AbstractByteBufAllocator implements 
             defaultAlignment = 0;
         }
         DEFAULT_PAGE_SIZE = defaultPageSize;
+        //  默认是 0
         DEFAULT_DIRECT_MEMORY_CACHE_ALIGNMENT = defaultAlignment;
 
+        // PoolChunk 内部使用 一棵满二叉树 表示内存 占用情况   这棵树最深 是 11
         int defaultMaxOrder = SystemPropertyUtil.getInt("io.netty.allocator.maxOrder", 11);
         Throwable maxOrderFallbackCause = null;
         try {
@@ -85,6 +88,7 @@ public class PooledByteBufAllocator extends AbstractByteBufAllocator implements 
             maxOrderFallbackCause = t;
             defaultMaxOrder = 11;
         }
+        // 设置常量 树深度
         DEFAULT_MAX_ORDER = defaultMaxOrder;
 
         // Determine reasonable default for nHeapArena and nDirectArena.
@@ -98,14 +102,24 @@ public class PooledByteBufAllocator extends AbstractByteBufAllocator implements 
          *
          * See https://github.com/netty/netty/issues/3888.
          */
+
+        // 计算出 默认 最少的 arena 个数  默认 是 cpu * 2
         final int defaultMinNumArena = NettyRuntime.availableProcessors() * 2;
+
+        // 8192 << 11 = 16 MiB per chunk      8192  转换为 2进制  然后 左移 11位 ，换算成 十进制后，在转换为 MB 就是 16mb
+        // 默认一个 chunk 管理 16mb 的真实 内存
         final int defaultChunkSize = DEFAULT_PAGE_SIZE << DEFAULT_MAX_ORDER;
+
+        // 可以暂时理解为 cpu * 2
         DEFAULT_NUM_HEAP_ARENA = Math.max(0,
                 SystemPropertyUtil.getInt(
                         "io.netty.allocator.numHeapArenas",
                         (int) Math.min(
                                 defaultMinNumArena,
                                 runtime.maxMemory() / defaultChunkSize / 2 / 3)));
+
+
+        // 可以暂时理解为 cpu * 2
         DEFAULT_NUM_DIRECT_ARENA = Math.max(0,
                 SystemPropertyUtil.getInt(
                         "io.netty.allocator.numDirectArenas",
@@ -113,12 +127,18 @@ public class PooledByteBufAllocator extends AbstractByteBufAllocator implements 
                                 defaultMinNumArena,
                                 PlatformDependent.maxDirectMemory() / defaultChunkSize / 2 / 3)));
 
+
+
+
         // cache sizes
+        // SmallMemoryRegionCache 内部 可以 缓存{256}个内存位置信息
         DEFAULT_SMALL_CACHE_SIZE = SystemPropertyUtil.getInt("io.netty.allocator.smallCacheSize", 256);
+        // NarmalMemoryRegionCache 内部 可以 缓存{64}个内存位置信息
         DEFAULT_NORMAL_CACHE_SIZE = SystemPropertyUtil.getInt("io.netty.allocator.normalCacheSize", 64);
 
         // 32 kb is the default maximum capacity of the cached buffer. Similar to what is explained in
         // 'Scalable memory allocation using jemalloc'
+        // 32k 表示memoryRegionCache 最大可以缓存的内存规格 是 32k
         DEFAULT_MAX_CACHED_BUFFER_CAPACITY = SystemPropertyUtil.getInt(
                 "io.netty.allocator.maxCachedBufferCapacity", 32 * 1024);
 
@@ -143,6 +163,7 @@ public class PooledByteBufAllocator extends AbstractByteBufAllocator implements 
                     "io.netty.allocator.cacheTrimIntervalMillis", 0);
         }
 
+        // 是否 全部的 线程 都使用 PoolThreadCache 技术，默认 是true， 表示都使用
         DEFAULT_USE_CACHE_FOR_ALL_THREADS = SystemPropertyUtil.getBoolean(
                 "io.netty.allocator.useCacheForAllThreads", true);
 
