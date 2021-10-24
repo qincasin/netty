@@ -63,20 +63,39 @@ final class PoolThreadCache {
     // TODO: Test if adding padding helps under contention
     //private long pad0, pad1, pad2, pad3, pad4, pad5, pad6, pad7;
 
+    // 参数1 heapArena
+    // 参数2 directArena
+    // 参数3 smallCacheSize 256
+    // 参数4 narmalCacheSize 64
+    // 参数5 DEFAULT_MAX_CACHED_BUFFER_CAPACITY 32K
+    // 参数6 DEFAULT_CACHE_TRIM_INTERVAL 8192  是一个阈值
     PoolThreadCache(PoolArena<byte[]> heapArena, PoolArena<ByteBuffer> directArena,
                     int smallCacheSize, int normalCacheSize, int maxCachedBufferCapacity,
                     int freeSweepAllocationThreshold) {
+
         checkPositiveOrZero(maxCachedBufferCapacity, "maxCachedBufferCapacity");
+        // 8192 ,当使用 PoolThreadCache get 8192 次之后， 会进行一次主动 清理空闲内存的 逻辑，将缓存的 内存位置 信息 归还给 PoolAlloctor
         this.freeSweepAllocationThreshold = freeSweepAllocationThreshold;
+        //保存分配给当前线程的 这两个Arena，注意 这里 arena 是由多线程共享的 一个线程只有一个 指定的 direct 、heap arena
         this.heapArena = heapArena;
         this.directArena = directArena;
         if (directArena != null) {
+            // 参数1 smallCacheSize  256
+            // 参数2 heapArena.numSmallSubpagePools  4
+            // 创建出来 一个长度  为 numSmallSubpagePools(4) 的 MemoryRegionCache 数组  ，并且 数组内每一个元素 类型为 SubPageMemoryRegionCache 类型
+            // SubPageMemoryRegionCache 里面 包含 一个 固定长度 {256} 的队列
             smallSubPageDirectCaches = createSubPageCaches(
                     smallCacheSize, directArena.numSmallSubpagePools);
 
+            // 参数1 smallCacheSize  64
+            // 参数2 maxCachedBufferCapacity  32k
+            // 参数3 directArena
+            // 创建一个长度为3 的 MemoryRegionCache 数组 ，数组里面 每个元素类型为 NormalMemoryRegionCache,并且每个 cache 里面可以 缓存64 个内存位置信息
+            // cache[0] =缓存的规格 8k,  cache[1] = 16k ,cache[2] = 32k
             normalDirectCaches = createNormalCaches(
                     normalCacheSize, maxCachedBufferCapacity, directArena);
 
+            //给当前PoolThreadCache 占用的 directArena 自增使用的线程数量
             directArena.numThreadCaches.getAndIncrement();
         } else {
             // No directArea is configured so just null out all caches
@@ -123,9 +142,14 @@ final class PoolThreadCache {
     }
 
     @SuppressWarnings("unchecked")
+    // 参数1 smallCacheSize  64
+    // 参数2 maxCachedBufferCapacity  32k
+    // 参数3 directArena
     private static <T> MemoryRegionCache<T>[] createNormalCaches(
             int cacheSize, int maxCachedBufferCapacity, PoolArena<T> area) {
+        // 64 > 0 && 32k > 0
         if (cacheSize > 0 && maxCachedBufferCapacity > 0) {
+            // min (16mb,32k)  ==> 32k
             int max = Math.min(area.chunkSize, maxCachedBufferCapacity);
             // Create as many normal caches as we support based on how many sizeIdx we have and what the upper
             // bound is that we want to cache in general.

@@ -71,6 +71,11 @@ abstract class PoolArena<T> extends SizeClasses implements PoolArenaMetric {
     // TODO: Test if adding padding helps under contention
     //private long pad0, pad1, pad2, pad3, pad4, pad5, pad6, pad7;
 
+    // 参数1 this  allocator 对象
+    // 参数2 pageSize 8K
+    // 参数3 pageShifts  13 1<<<13 ==> pageSize
+    // 参数4 chunkSize 16mb
+    // 参数5 directMemoryCacheAlignment 0
     protected PoolArena(PooledByteBufAllocator parent, int pageSize,
           int pageShifts, int chunkSize, int cacheAlignment) {
         super(pageSize, pageShifts, chunkSize, cacheAlignment);
@@ -79,6 +84,8 @@ abstract class PoolArena<T> extends SizeClasses implements PoolArenaMetric {
 
         numSmallSubpagePools = nSubpages;
         smallSubpagePools = newSubpagePoolArray(numSmallSubpagePools);
+        // 赋值
+        // 每个数组内的元素 都是PoolSubpage 对象，该对象为 head，head在初始时  prev 和next 都指向自身
         for (int i = 0; i < smallSubpagePools.length; i ++) {
             smallSubpagePools[i] = newSubpagePoolHead();
         }
@@ -109,6 +116,7 @@ abstract class PoolArena<T> extends SizeClasses implements PoolArenaMetric {
 
     private PoolSubpage<T> newSubpagePoolHead() {
         PoolSubpage<T> head = new PoolSubpage<T>();
+        //  这里前后 指向了 它自己
         head.prev = head;
         head.next = head;
         return head;
@@ -121,15 +129,28 @@ abstract class PoolArena<T> extends SizeClasses implements PoolArenaMetric {
 
     abstract boolean isDirect();
 
+    // 参数1 cache 当前线程相关的 PoolThreadCache 对象
+    // 参数2 initialCapacity 业务层需要的内存容量大小
+    // 参数3 maxCapacity 最大内存大小
     PooledByteBuf<T> allocate(PoolThreadCache cache, int reqCapacity, int maxCapacity) {
+        // 获取ByteBuf 对象 ，在这一步时，该ByteBuf 还未管理任何 内存，他作为内存 容器 ...
         PooledByteBuf<T> buf = newByteBuf(maxCapacity);
+        // 参数1 cache 当前线程相关的 PoolThreadCache 对象
+        // 参数2 buf 返回给业务使用ByteBuf对象，下面逻辑，会给该buf 分配真正的内存
+        // 参数3 initialCapacity 业务层需要的内存容量大小
         allocate(cache, buf, reqCapacity);
         return buf;
     }
 
+    // 参数1 cache 当前线程相关的 PoolThreadCache 对象
+    // 参数2 buf 返回给业务使用ByteBuf对象，下面逻辑，会给该buf 分配真正的内存
+    // 参数3 initialCapacity 业务层需要的内存容量大小
     private void allocate(PoolThreadCache cache, PooledByteBuf<T> buf, final int reqCapacity) {
+
+        // 这个方法里面会拿到一个 head 节点的 下标位置，代表 normal 或者 small 或者 huge 的 数组下标位置
         final int sizeIdx = size2SizeIdx(reqCapacity);
 
+        // 假设当前 reqCapacity = 2048 ，会计算出来 sizeIdx = 2  ，此时2 小于  smallMaxSizeIdx 则走下面的分支。
         if (sizeIdx <= smallMaxSizeIdx) {
             tcacheAllocateSmall(cache, buf, reqCapacity, sizeIdx);
         } else if (sizeIdx < nSizes) {
@@ -156,9 +177,13 @@ abstract class PoolArena<T> extends SizeClasses implements PoolArenaMetric {
          */
         final PoolSubpage<T> head = smallSubpagePools[sizeIdx];
         final boolean needsNormalAllocation;
+        //  head 节点作为 锁
+        // 初始化时  创建出来的 head 节点 的 prev 和 next 都是 指向自己的节点；
+        // 只有 arena 内申请过 某个规格的 subpage后，对应的 下标 桶内 才有 page
         synchronized (head) {
             final PoolSubpage<T> s = head.next;
             needsNormalAllocation = s == head;
+            // 条件成立 说明 该规格的桶内 有subpage ，先暂时不考虑
             if (!needsNormalAllocation) {
                 assert s.doNotDestroy && s.elemSize == sizeIdx2size(sizeIdx);
                 long handle = s.allocate();
@@ -167,8 +192,13 @@ abstract class PoolArena<T> extends SizeClasses implements PoolArenaMetric {
             }
         }
 
+        // 最复杂的逻辑  条件成立说明  arena 的 subpage 和 线程 cache 都没能 满足申请 内存的请求， 走 allocateNormal 逻辑
         if (needsNormalAllocation) {
             synchronized (this) {
+                // 参数1  buf 返回给业务使用ByteBuf对象，下面逻辑，会给该buf 分配真正的内存
+                // 参数2  reqCapacity  业务层需要的内存容量大小
+                // 参数3  sizeIdx   计算出来的 head 下标
+                // 参数4  cache    PoolThreadCache
                 allocateNormal(buf, reqCapacity, sizeIdx, cache);
             }
         }
@@ -189,7 +219,14 @@ abstract class PoolArena<T> extends SizeClasses implements PoolArenaMetric {
     }
 
     // Method must be called inside synchronized(this) { ... } block
+    // 参数1  buf 返回给业务使用ByteBuf对象，下面逻辑，会给该buf 分配真正的内存
+    // 参数2  reqCapacity  业务层需要的内存容量大小
+    // 参数3  sizeIdx   计算出来的 head 下标
+    // 参数4  cache    PoolThreadCache
+
     private void allocateNormal(PooledByteBuf<T> buf, int reqCapacity, int sizeIdx, PoolThreadCache threadCache) {
+        //程序 当前是先到 PoolChunkList 内 去申请内存 ... 先去q050 ，不够 在去 q025 ，不够 再去q000 ，不够 再去 qinit，不够 再去q075
+        // 本次我们看源码，暂时先不考虑PoolChunkList内部申请的逻辑，我们本次讨论 最复杂情况，也就是 PoolChunkList 中为空，重新创建一个chunk
         if (q050.allocate(buf, reqCapacity, sizeIdx, threadCache) ||
             q025.allocate(buf, reqCapacity, sizeIdx, threadCache) ||
             q000.allocate(buf, reqCapacity, sizeIdx, threadCache) ||
@@ -197,8 +234,13 @@ abstract class PoolArena<T> extends SizeClasses implements PoolArenaMetric {
             q075.allocate(buf, reqCapacity, sizeIdx, threadCache)) {
             return;
         }
+        //执行到这里面，说明，在PoolChunkList 没有申请成功，需要创建一个新的chunk ，在新的chunk中申请内存
 
         // Add a new chunk.
+        // 参数1 pageSize 8K
+        // 参数2 nPSizes  11
+        // 参数3 pageShifts 13
+        // 参数4 chunkSize 16mb
         PoolChunk<T> c = newChunk(pageSize, nPSizes, pageShifts, chunkSize);
         boolean success = c.allocate(buf, reqCapacity, sizeIdx, threadCache);
         assert success;
@@ -605,8 +647,18 @@ abstract class PoolArena<T> extends SizeClasses implements PoolArenaMetric {
 
     static final class DirectArena extends PoolArena<ByteBuffer> {
 
+        // 参数1 this  allocator 对象
+        // 参数2 pageSize 8K
+        // 参数3 pageShifts  13 1<<<13 ==> pageSize
+        // 参数4 chunkSize 16mb
+        // 参数5 directMemoryCacheAlignment 0
         DirectArena(PooledByteBufAllocator parent, int pageSize, int pageShifts,
                     int chunkSize, int directMemoryCacheAlignment) {
+            // 参数1 this  allocator 对象
+            // 参数2 pageSize 8K
+            // 参数3 pageShifts  13 1<<<13 ==> pageSize
+            // 参数4 chunkSize 16mb
+            // 参数5 directMemoryCacheAlignment 0
             super(parent, pageSize, pageShifts, chunkSize,
                   directMemoryCacheAlignment);
         }
@@ -617,10 +669,22 @@ abstract class PoolArena<T> extends SizeClasses implements PoolArenaMetric {
         }
 
         @Override
+        // 参数1 pageSize 8K
+        // 参数2 nPSizes  11
+        // 参数3 pageShifts 13
+        // 参数4 chunkSize 16mb
         protected PoolChunk<ByteBuffer> newChunk(int pageSize, int maxPageIdx,
             int pageShifts, int chunkSize) {
             if (directMemoryCacheAlignment == 0) {
+                // 非常重要，！！ 这个方法使用unsafe的方式，完成DirectByteBuffer 内存的申请，申请多少？ 16mb，返回给咱们ByteBuffer 对象
                 ByteBuffer memory = allocateDirect(chunkSize);
+                // 参数1: this, 当前directArena 对象，poolChunk对象需要知道它爸爸是谁
+                // 参数2: memory  (allocateDirect(chunkSize);) 非常重要，！！ 这个方法使用unsafe的方式，完成DirectByteBuffer 内存的申请，申请多少？ 16mb，返回给咱们ByteBuffer 对象
+                // 参数3: memory
+                // 参数4: pageSize 8k
+                // 参数5: pageShifts 13
+                // 参数6: chunkSize 18mb
+                // 参数7: maxPageIdx 11
                 return new PoolChunk<ByteBuffer>(this, memory, memory, pageSize, pageShifts,
                         chunkSize, maxPageIdx);
             }

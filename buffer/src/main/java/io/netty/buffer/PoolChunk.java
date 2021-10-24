@@ -34,10 +34,13 @@ import java.util.PriorityQueue;
  * in the byte array that has enough empty space to accommodate the requested size and
  * return a (long) handle that encodes this offset information, (this memory segment is then
  * marked as reserved so it is always used by exactly one ByteBuf and no more)
+ * 首先 没我们分配一个大小为chunkSize的字节数组， 每当需要创建给定大小的ByteBuf数组时，我们都会在字节数组中寻找第一个位置 ，该位置有足够的空间来容纳请求的大小，
+ * 并且返回一个(long)handle 来进行编码这个偏移的信息, (这个内存段然后被标记位为reserved , 以便它总是被一个ByteBuf精确的使用，直至它没有 and no more )
  *
  * For simplicity all sizes are normalized according to {@link PoolArena#size2SizeIdx(int)} method.
  * This ensures that when we request for memory segments of size > pageSize the normalizedCapacity
  * equals the next nearest size in {@link SizeClasses}.
+ * 大概意思 就是 为简单起见  将请求的 容量大小进行标准化， 可以参考 {@link PoolArena#size2SizeIdx(int)} 方法；如果非标准化的 我们会寻找一个距离下一个该给定容量最近的标准化规格的值
  *
  *
  *  A chunk has the following layout:
@@ -119,6 +122,7 @@ import java.util.PriorityQueue;
  * 1) find a not full subpage according to size.
  *    if it already exists just return, otherwise allocate a new PoolSubpage and call init()
  *    note that this subpage object is added to subpagesPool in the PoolArena when we init() it
+ *    注意这个子页面对象是在我们init()的时候添加到PoolArena中的subpagesPool中的
  * 2) call subpage.allocate()
  *
  * Algorithm: [free(handle, length, nioBuffer)]
@@ -182,10 +186,18 @@ final class PoolChunk<T> implements PoolChunkMetric {
     //private long pad0, pad1, pad2, pad3, pad4, pad5, pad6, pad7;
 
     @SuppressWarnings("unchecked")
+        // 参数1: this, 当前directArena 对象，poolChunk对象需要知道它爸爸是谁
+        // 参数2: memory
+        // 参数3: memory (allocateDirect(chunkSize);) 非常重要，！！ 这个方法使用unsafe的方式，完成DirectByteBuffer 内存的申请，申请多少？ 16mb，返回给咱们ByteBuffer 对象
+        // 参数4: pageSize 8k
+        // 参数5: pageShifts 13
+        // 参数6: chunkSize 18mb
+        // 参数7: maxPageIdx 11
     PoolChunk(PoolArena<T> arena, Object base, T memory, int pageSize, int pageShifts, int chunkSize, int maxPageIdx) {
         unpooled = false;
         this.arena = arena;
         this.base = base;
+        //让chunk直接持有 byteBuffer 对象
         this.memory = memory;
         this.pageSize = pageSize;
         this.pageShifts = pageShifts;
