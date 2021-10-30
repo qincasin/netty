@@ -73,6 +73,10 @@ public class FixedLengthFrameDecoder extends ByteToMessageDecoder {
         if (in.readableBytes() < frameLength) {
             return null;
         } else {
+            // readRetainedSlice 从原堆积区读取 指定长度的 字节量创建出来新的ByteBuf，并且会增加 堆积区的引用计数值
+            // 为什么要增加引用计数值呢？
+            // 因为切片出来的byteBuf 占用的内存是堆积区 内存的子集，在切片未释放内存之前， 堆积区ByteBuf 不能去释放内存，不然切片 就找不到内存了...
+            //切片byteBuf.release() 会将 它的父节点 堆积区ByteBuf 引用计数器 -1
             return in.readRetainedSlice(frameLength);
         }
     }

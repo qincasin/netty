@@ -35,6 +35,7 @@ import java.util.List;
  *
  * <h3>Specifying more than one delimiter</h3>
  * <p>
+ *     如果定义了多个分隔符，并且可解码出多个消息帧，则选择产生最小帧长的结果
  * {@link DelimiterBasedFrameDecoder} allows you to specify more than one
  * delimiter.  If more than one delimiter is found in the buffer, it chooses
  * the delimiter which produces the shortest frame.  For example, if you have
@@ -60,13 +61,20 @@ import java.util.List;
  */
 public class DelimiterBasedFrameDecoder extends ByteToMessageDecoder {
 
+    //自定义 分隔符 ByteBuf[]
     private final ByteBuf[] delimiters;
+    //业务制定的最大包长度
     private final int maxFrameLength;
+    //是否跳过分隔符
     private final boolean stripDelimiter;
+    //是否快速失败
     private final boolean failFast;
+    //是否为丢弃模式
     private boolean discardingTooLongFrame;
+    //丢弃模式下  记录已经丢弃的数据量
     private int tooLongFrameLength;
     /** Set only when decoding with "\n" and "\r\n" as the delimiter.  */
+    //如果你创建的 delimiters 内部的 分隔符 是'\n' 和 '\r\n' 的话，当前decoder 借用 lineBasedDecoder 代理来完成 所有逻辑
     private final LineBasedFrameDecoder lineBasedDecoder;
 
     /**
@@ -170,9 +178,10 @@ public class DelimiterBasedFrameDecoder extends ByteToMessageDecoder {
         ObjectUtil.checkNonEmpty(delimiters, "delimiters");
 
         if (isLineBased(delimiters) && !isSubclass()) {
+            //一般情况下 你使用 DelimiterBasedFrameDecoder 时传递的分隔符 是 '\n' 和 '\r\n' 则使用 lineBasedDecoder 代理
             lineBasedDecoder = new LineBasedFrameDecoder(maxFrameLength, stripDelimiter, failFast);
             this.delimiters = null;
-        } else {
+        } else { //执行到这里  说明 分隔符 列表是 其他情况
             this.delimiters = new ByteBuf[delimiters.length];
             for (int i = 0; i < delimiters.length; i ++) {
                 ByteBuf d = delimiters[i];
@@ -197,6 +206,8 @@ public class DelimiterBasedFrameDecoder extends ByteToMessageDecoder {
             a = delimiters[1];
             b = delimiters[0];
         }
+
+        //执行到这里 a的长度 大于 b的长度
         return a.capacity() == 2 && b.capacity() == 1
                 && a.getByte(0) == '\r' && a.getByte(1) == '\n'
                 && b.getByte(0) == '\n';
@@ -227,9 +238,12 @@ public class DelimiterBasedFrameDecoder extends ByteToMessageDecoder {
      */
     protected Object decode(ChannelHandlerContext ctx, ByteBuf buffer) throws Exception {
         if (lineBasedDecoder != null) {
+            //代理完成功能
             return lineBasedDecoder.decode(ctx, buffer);
         }
+        //执行到这里 就是其他情况了 ....
         // Try all delimiters and choose the delimiter which yields the shortest frame.
+        //尝试所有分隔符并选择产生最短帧的分隔符。
         int minFrameLength = Integer.MAX_VALUE;
         ByteBuf minDelim = null;
         for (ByteBuf delim: delimiters) {
