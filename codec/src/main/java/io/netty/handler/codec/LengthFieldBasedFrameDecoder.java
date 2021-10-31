@@ -186,16 +186,27 @@ import io.netty.channel.ChannelHandlerContext;
  */
 public class LengthFieldBasedFrameDecoder extends ByteToMessageDecoder {
 
+    // 大小端排序的工具
     private final ByteOrder byteOrder;
+    //最大帧长度
     private final int maxFrameLength;
+    //长度域字段偏移位置
     private final int lengthFieldOffset;
+    //长度域字段本身长度
     private final int lengthFieldLength;
+    //根据长度域字段偏移位置 和 长度域自身长度 计算出来的 长度域 结束偏移位置
     private final int lengthFieldEndOffset;
+    //调整长度
     private final int lengthAdjustment;
+    //需要跳过的字节
     private final int initialBytesToStrip;
+    //快速失败
     private final boolean failFast;
+    //true 表示decoder 开启丢弃模式， false 表示正常工作模式
     private boolean discardingTooLongFrame;
+    //当某个帧的长度域内的 长度值 超过maxLength，则开启丢弃模式，此字段记录需要丢弃的帧长度
     private long tooLongFrameLength;
+    //记录还剩余多少字节 需要丢弃
     private long bytesToDiscard;
 
     /**
@@ -340,6 +351,7 @@ public class LengthFieldBasedFrameDecoder extends ByteToMessageDecoder {
         int localBytesToDiscard = (int) Math.min(bytesToDiscard, in.readableBytes());
         in.skipBytes(localBytesToDiscard);
         bytesToDiscard -= localBytesToDiscard;
+        //更新待丢弃的 字节长度大小...
         this.bytesToDiscard = bytesToDiscard;
 
         failIfNecessary(false);
@@ -360,16 +372,24 @@ public class LengthFieldBasedFrameDecoder extends ByteToMessageDecoder {
               "than lengthFieldEndOffset: " + lengthFieldEndOffset);
     }
 
+    //参数1 堆积区
+    //参数2 当前数据帧长度值
     private void exceededFrameLength(ByteBuf in, long frameLength) {
+        // 当前帧长度 - 堆积区可读数据量大小
         long discard = frameLength - in.readableBytes();
         tooLongFrameLength = frameLength;
 
+        // 条件成立 说明堆积区 内的数据 是 > frameLength 大小的， 可以直接将本帧数据 全部跳过
         if (discard < 0) {
             // buffer contains more bytes then the frameLength so we can discard all now
+            //缓冲区包含的字节比 frameLength 多，因此我们现在可以丢弃所有字节
             in.skipBytes((int) frameLength);
         } else {
+            //执行到这里  说明 堆积区内的数据 是当前帧的 一部分数据.. 这种情况需要开启丢弃模式！
+
             // Enter the discard mode and discard everything received so far.
             discardingTooLongFrame = true;
+            //当前帧 还有多少字节待丢弃 ....
             bytesToDiscard = discard;
             in.skipBytes(in.readableBytes());
         }
@@ -394,47 +414,68 @@ public class LengthFieldBasedFrameDecoder extends ByteToMessageDecoder {
      *                          be created.
      */
     protected Object decode(ChannelHandlerContext ctx, ByteBuf in) throws Exception {
+        //条件成立 说明是丢弃模式
         if (discardingTooLongFrame) {
             discardingTooLongFrame(in);
         }
 
+        //条件成立 说明堆积区 内的数据 连长度域都没加载完，  此时 什么也无法解析   返回null
         if (in.readableBytes() < lengthFieldEndOffset) {
             return null;
         }
 
+        //计算出 真实的 长度域开始位置
         int actualLengthFieldOffset = in.readerIndex() + lengthFieldOffset;
+        //获取frame 的长度域的值， 这个长度域的值 不包含 lengthAdjustment 调整值
+        //参数1 堆积区
+        //参数2 真实的 长度域开始位置
+        //参数3 长度域长度
+        //参数4 大小端排序工具对象
         long frameLength = getUnadjustedFrameLength(in, actualLengthFieldOffset, lengthFieldLength, byteOrder);
 
         if (frameLength < 0) {
             failOnNegativeLengthField(in, frameLength, lengthFieldEndOffset);
         }
 
+        //计算出来的 这个frameLength 是整个包的长度 .... 别管包内有多少个字段域
         frameLength += lengthAdjustment + lengthFieldEndOffset;
 
         if (frameLength < lengthFieldEndOffset) {
             failOnFrameLengthLessThanLengthFieldEndOffset(in, frameLength, lengthFieldEndOffset);
         }
 
+
+        //条件成立  说明当前帧的长度 太长了  超过了你们制定的 协议规格了，，，，  怎么办 ？？？ 丢！
         if (frameLength > maxFrameLength) {
+            //参数1 堆积区
+            //参数2 当前数据帧长度值
             exceededFrameLength(in, frameLength);
             return null;
         }
 
         // never overflows because it's less than maxFrameLength
+        //帧大小
         int frameLengthInt = (int) frameLength;
+        //条件成立 说明当前堆积区 是当前帧的 半包数据，需要等待 下半部分数据 累积进去之后 再解码 ...
         if (in.readableBytes() < frameLengthInt) {
+            //返回null 表示未解析成功
             return null;
         }
 
+        // 执行到这里 说明堆积区 数据量 >= 帧大小的
         if (initialBytesToStrip > frameLengthInt) {
             failOnFrameLengthLessThanInitialBytesToStrip(in, frameLength, initialBytesToStrip);
         }
+
+        // 跳过一部分字节
         in.skipBytes(initialBytesToStrip);
 
         // extract frame
         int readerIndex = in.readerIndex();
         int actualFrameLength = frameLengthInt - initialBytesToStrip;
+        //提取 真实的帧数据
         ByteBuf frame = extractFrame(ctx, in, readerIndex, actualFrameLength);
+        //更新 堆积区 readerIndex
         in.readerIndex(readerIndex + actualFrameLength);
         return frame;
     }
@@ -447,8 +488,14 @@ public class LengthFieldBasedFrameDecoder extends ByteToMessageDecoder {
      *
      * @throws DecoderException if failed to decode the specified region
      */
+    //获取frame 的长度域的值， 这个长度域的值 不包含 lengthAdjustment 调整值
+    //参数1 堆积区
+    //参数2 真实的 长度域开始位置
+    //参数3 长度域长度
+    //参数4 大小端排序工具对象
     protected long getUnadjustedFrameLength(ByteBuf buf, int offset, int length, ByteOrder order) {
         buf = buf.order(order);
+        //帧长度
         long frameLength;
         switch (length) {
         case 1:
@@ -474,16 +521,20 @@ public class LengthFieldBasedFrameDecoder extends ByteToMessageDecoder {
     }
 
     private void failIfNecessary(boolean firstDetectionOfTooLongFrame) {
+        //条件成立 说明 当前 帧 所有数据 都已经跳过了 ，  可以关闭 丢弃模式了
         if (bytesToDiscard == 0) {
             // Reset to the initial state and tell the handlers that
             // the frame was too large.
             long tooLongFrameLength = this.tooLongFrameLength;
+            //设置需要丢弃的帧长度
             this.tooLongFrameLength = 0;
+            //关闭丢弃模式
             discardingTooLongFrame = false;
             if (!failFast || firstDetectionOfTooLongFrame) {
                 fail(tooLongFrameLength);
             }
         } else {
+            //执行到这里 说明 当前帧 还有数据待丢弃
             // Keep discarding and notify handlers if necessary.
             if (failFast && firstDetectionOfTooLongFrame) {
                 fail(tooLongFrameLength);
