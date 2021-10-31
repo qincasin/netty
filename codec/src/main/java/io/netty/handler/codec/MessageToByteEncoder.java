@@ -45,7 +45,9 @@ import io.netty.util.internal.TypeParameterMatcher;
  */
 public abstract class MessageToByteEncoder<I> extends ChannelOutboundHandlerAdapter {
 
+    //类型匹配器，提取实现类 实现的 真实泛型  创建出一个ReflectiveMatcher 对象
     private final TypeParameterMatcher matcher;
+    //是否偏向对外内存  默认 是true
     private final boolean preferDirect;
 
     /**
@@ -70,6 +72,8 @@ public abstract class MessageToByteEncoder<I> extends ChannelOutboundHandlerAdap
      *                              {@link ByteBuf}, which is backed by an byte array.
      */
     protected MessageToByteEncoder(boolean preferDirect) {
+        //提取当前对象的真实 泛型 ，比如说  BusinessEncoder extends MessageToByteEncoder<User> {.....}
+        //这里就会拿User.class 创建一个match 对象
         matcher = TypeParameterMatcher.find(this, MessageToByteEncoder.class, "I");
         this.preferDirect = preferDirect;
     }
@@ -99,9 +103,12 @@ public abstract class MessageToByteEncoder<I> extends ChannelOutboundHandlerAdap
     public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
         ByteBuf buf = null;
         try {
+            //条件成立 说明当前 编码器 可以对 msg 对象 进行编码
             if (acceptOutboundMessage(msg)) {
+                //转成 真实的 类型
                 @SuppressWarnings("unchecked")
                 I cast = (I) msg;
+                // 到内存池申请 byteBuf  一般会重写  allocateBuffer 这个方法，按照 业务自身的msg对象大小 去申请 byteBuf
                 buf = allocateBuffer(ctx, cast, preferDirect);
                 try {
                     encode(ctx, cast, buf);
@@ -109,12 +116,16 @@ public abstract class MessageToByteEncoder<I> extends ChannelOutboundHandlerAdap
                     ReferenceCountUtil.release(cast);
                 }
 
+                //条件成立  说明编码 成功， buf内是有 有效数据的 ，需要向下一个 出战处理器 传递
                 if (buf.isReadable()) {
                     ctx.write(buf, promise);
                 } else {
+                    //执行到这里  说明编码 方法 未向 byteBuf 内 写任何东西，  说明没啥东西 需要向 socket 写
+                    //这里 将 内存池 内存申请的byteBuf 释放
                     buf.release();
                     ctx.write(Unpooled.EMPTY_BUFFER, promise);
                 }
+                //buf 置为空
                 buf = null;
             } else {
                 ctx.write(msg, promise);
@@ -124,6 +135,7 @@ public abstract class MessageToByteEncoder<I> extends ChannelOutboundHandlerAdap
         } catch (Throwable e) {
             throw new EncoderException(e);
         } finally {
+            //条件什么时候成立呢   ？   正常情况下 buf 是 null，  只有上面逻辑 出现异常了，担心出现内存泄漏   才会执行 buf.release() 方法
             if (buf != null) {
                 buf.release();
             }

@@ -54,10 +54,13 @@ import java.util.List;
  */
 @Sharable
 public class LengthFieldPrepender extends MessageToMessageEncoder<ByteBuf> {
-
+    //大小端工具对象
     private final ByteOrder byteOrder;
+    //长度域字段长度
     private final int lengthFieldLength;
+    //长度域是否包含 长度域 本身
     private final boolean lengthIncludesLengthFieldLength;
+    //调整长度
     private final int lengthAdjustment;
 
     /**
@@ -158,7 +161,9 @@ public class LengthFieldPrepender extends MessageToMessageEncoder<ByteBuf> {
 
     @Override
     protected void encode(ChannelHandlerContext ctx, ByteBuf msg, List<Object> out) throws Exception {
+        //lengthAdjustment 一般都是0  length 就是 msg 可读数据量的大小
         int length = msg.readableBytes() + lengthAdjustment;
+        //条件成立  说明 长度域 内的值 需要包含 长度域 自身长度
         if (lengthIncludesLengthFieldLength) {
             length += lengthFieldLength;
         }
@@ -196,6 +201,9 @@ public class LengthFieldPrepender extends MessageToMessageEncoder<ByteBuf> {
         default:
             throw new Error("should not reach here");
         }
+        //msg.retain()  将引用计数 + 1，还会返回 当前byteBuf
+        //这里为什么要  + 1？ 因为当前类  继承自  MessageToMessageEncoder  这里 引用 + 1 是防止 父类 finally 逻辑 给 release 释放内存
+
         out.add(msg.retain());
     }
 }

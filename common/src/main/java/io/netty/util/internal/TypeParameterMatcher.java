@@ -65,6 +65,10 @@ public abstract class TypeParameterMatcher {
 
         TypeParameterMatcher matcher = map.get(typeParamName);
         if (matcher == null) {
+            // 参数1：object 应该是 Decoder 或者 Encoder 对象
+            // 参数2：parametrizedSuperclass，object 的父类，可能是 MessageToMessageDecoder ...
+            // 参数3：typeParamName，泛型名称  “I”
+            // find0(object, parametrizedSuperclass, typeParamName) => 最终返回 BizDTO.class
             matcher = get(find0(object, parametrizedSuperclass, typeParamName));
             map.put(typeParamName, matcher);
         }
@@ -72,17 +76,26 @@ public abstract class TypeParameterMatcher {
         return matcher;
     }
 
+    // 参数1：object 应该是 Decoder 或者 Encoder 对象
+    // 参数2：parametrizedSuperclass，object 的父类，可能是 MessageToMessageDecoder ...
+    // 参数3：typeParamName，泛型名称  “I”
+    // 大概能猜个123，最终返回泛型 “I” 在object 上实现的 真实类型。比如object是 MessageToBusiness extends MessageToMessageDecoder<BizDTO> {...}
+    // 这个方法最后返回给上层  BizDTO.class
     private static Class<?> find0(
             final Object object, Class<?> parametrizedSuperclass, String typeParamName) {
 
+        // 获取object 真实实现类型，比如是 MessageToBizDecoder
         final Class<?> thisClass = object.getClass();
         Class<?> currentClass = thisClass;
         for (;;) {
+            // 假定咱们条件成立， MessageToBizDecoder extends MessageToMessageDecoder {...}
             if (currentClass.getSuperclass() == parametrizedSuperclass) {
                 int typeParamIndex = -1;
+                // 提取父类的 泛型 信息，["I"]
                 TypeVariable<?>[] typeParams = currentClass.getSuperclass().getTypeParameters();
                 for (int i = 0; i < typeParams.length; i ++) {
                     if (typeParamName.equals(typeParams[i].getName())) {
+                        // 设置 值 为 0
                         typeParamIndex = i;
                         break;
                     }
@@ -92,14 +105,15 @@ public abstract class TypeParameterMatcher {
                     throw new IllegalStateException(
                             "unknown type parameter '" + typeParamName + "': " + parametrizedSuperclass);
                 }
-
+                // 返回父类 类型 即 MessageToMessageDecoder,包含泛型信息。=》 MessageToMessageDecoder<I>
                 Type genericSuperType = currentClass.getGenericSuperclass();
                 if (!(genericSuperType instanceof ParameterizedType)) {
                     return Object.class;
                 }
-
+                // 获取 运行时 泛型类型列表
                 Type[] actualTypeParams = ((ParameterizedType) genericSuperType).getActualTypeArguments();
 
+                // 获取下标 0 的真实类型
                 Type actualTypeParam = actualTypeParams[typeParamIndex];
                 if (actualTypeParam instanceof ParameterizedType) {
                     actualTypeParam = ((ParameterizedType) actualTypeParam).getRawType();
